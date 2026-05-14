@@ -1,3 +1,4 @@
 build/
 health-api
 a.out
+.env
