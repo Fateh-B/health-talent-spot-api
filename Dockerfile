@@ -4,12 +4,15 @@ ARG MONGO_CXX_DRIVER_VERSION=r4.1.4
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        apt-utils \
         build-essential \
         ca-certificates \
         cmake \
         curl \
+        git \
         libsasl2-dev \
         libssl-dev \
+        libboost-all-dev \
         pkg-config \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
