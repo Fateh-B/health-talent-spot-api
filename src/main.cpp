@@ -17,6 +17,26 @@ using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 using json = nlohmann::json;
 
+struct CorsMiddleware
+{
+    struct context {};
+
+    void before_handle(crow::request& request, crow::response& response, context&)
+    {
+        if (request.method == crow::HTTPMethod::OPTIONS) {
+            response.code = 204;
+            response.end();
+        }
+    }
+
+    void after_handle(crow::request&, crow::response& response, context&)
+    {
+        response.set_header("Access-Control-Allow-Origin", "*");
+        response.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        response.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    }
+};
+
 std::string getMongoUri(const std::map<std::string, std::string>& env)
 {
     const char* mongoUri = std::getenv("MONGODB_URI");
@@ -46,7 +66,7 @@ int main() {
 
     mongocxx::instance instance;
 
-    crow::SimpleApp app;
+    crow::App<CorsMiddleware> app;
 
     CROW_ROUTE(app, "/api/db-test")([env](){
         mongocxx::uri uri(env.at("MONGODB_URI"));
