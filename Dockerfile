@@ -42,6 +42,7 @@ FROM ubuntu:24.04
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
+        libssl-dev \
         libcurl4 \
         libsasl2-2 \
         libssl3 \
@@ -54,7 +55,5 @@ COPY --from=builder /app/build/health-api /app/health-api
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 WORKDIR /app
-
-EXPOSE 3000
 
 CMD ["./health-api"]
