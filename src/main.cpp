@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <map>
+#include <cstdlib>
 #include <bsoncxx/builder/basic/document.hpp>
 #include <bsoncxx/json.hpp>
 #include <mongocxx/client.hpp>
@@ -16,6 +17,21 @@ using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 using json = nlohmann::json;
 
+std::string getMongoUri(const std::map<std::string, std::string>& env)
+{
+    const char* mongoUri = std::getenv("MONGODB_URI");
+
+    if (mongoUri != nullptr) {
+        return std::string(mongoUri);
+    }
+
+    auto it = env.find("MONGODB_URI");
+    if (it != env.end()) {
+        return it->second;
+    }
+
+    return "";
+}
 
 int main() {
     std::map<std::string, std::string> env;
@@ -45,7 +61,13 @@ int main() {
     });
 
     CROW_ROUTE(app, "/api/joboffers")([env](){
-        mongocxx::uri uri(env.at("MONGODB_URI"));
+        std::string mongoUri = getMongoUri(env);
+
+        if (mongoUri.empty()) {
+            return crow::response(500, "MONGODB_URI is missing");
+        }
+
+        mongocxx::uri uri(mongoUri);
         mongocxx::client client(uri);
         
         auto db = client["health_talent_spot"];
