@@ -22,6 +22,7 @@ client = MongoClient(os.getenv("MONGODB_URI"))
 db = client["health_talent_spot"]
 
 class JobOffer(BaseModel):
+    id: str
     title: str
     sector: str
     specialty: Optional[str] = None
@@ -64,18 +65,19 @@ def time_ago(date):
 
 @app.get("/api/joboffers", response_model=List[JobOffer])
 def get_jobs():
-    jobs = list(db.joboffers.find({}, {"_id": 0}))
+    jobs = list(db.joboffers.find({}))
     for job in jobs:
+        job["id"] = str(job.pop("_id"))
         job["postedDate"] = time_ago(job.get("postedDate"))
     return jobs
 
 @app.get("/api/joboffers/{job_id}")
 def get_job(job_id: str):
     from bson.objectid import ObjectId
-    job = db.joboffers.find_one({"_id": ObjectId(job_id)}, {"_id": 0})
+    job = db.joboffers.find_one({"_id": ObjectId(job_id)})
+    print(job)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    job["id"] = str(job.pop("_id"))
     job["postedDate"] = time_ago(job.get("postedDate"))
-    if isinstance(job.get("rating"), Decimal128):
-        job["rating"] = float(job["rating"].to_decimal())
     return job
