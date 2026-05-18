@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
 from datetime import datetime
@@ -39,6 +39,19 @@ class JobOffer(BaseModel):
     rating: float
 
 
+class JobOfferCreate(BaseModel):
+    title: str
+    sector: str
+    specialty: Optional[str] = None
+    location: str
+    contractType: str
+    salary: int
+    experienceLevel: str = Field(alias="experienceLevel")
+    genderPreference: str
+    description: str
+    requiredSkills: str
+
+
 def time_ago(date):
     if isinstance(date, str):
         return date
@@ -71,11 +84,30 @@ def get_jobs():
         job["postedDate"] = time_ago(job.get("postedDate"))
     return jobs
 
+@app.post("/api/joboffers", status_code=201)
+def create_job(job_offer: JobOfferCreate):
+    now = datetime.utcnow()
+    job_doc = job_offer.model_dump(by_alias=True)
+    job_doc.update({
+        "experience": job_doc["experienceLevel"],
+        "recruiterId": "anonymous",
+        "postedDate": now,
+        "applicants": 0,
+        "rating": 0,
+        "createdAt": now,
+        "updatedAt": now,
+    })
+
+    result = db.joboffers.insert_one(job_doc)
+    job_doc["id"] = str(result.inserted_id)
+    job_doc.pop("_id", None)
+    job_doc["postedDate"] = time_ago(job_doc["postedDate"])
+    return job_doc
+
 @app.get("/api/joboffers/{job_id}")
 def get_job(job_id: str):
     from bson.objectid import ObjectId
     job = db.joboffers.find_one({"_id": ObjectId(job_id)})
-    print(job)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job["id"] = str(job.pop("_id"))
