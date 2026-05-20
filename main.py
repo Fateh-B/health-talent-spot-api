@@ -4,6 +4,8 @@ from pymongo import MongoClient
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
+import hashlib
+import secrets
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -13,7 +15,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[],
+    allow_origin_regex=r"https://.*\.netlify\.app|http://localhost:.*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -52,6 +56,41 @@ class JobOfferCreate(BaseModel):
     requiredSkills: str
 
 
+class UserSignup(BaseModel):
+    email: str
+    password: str
+    role: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+def hash_password(password: str):
+    salt = secrets.token_hex(16)
+    password_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000).hex()
+    return f"{salt}:{password_hash}"
+
+
+def verify_password(password: str, stored_password: str):
+    salt, password_hash = stored_password.split(":")
+    test_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000).hex()
+    return secrets.compare_digest(test_hash, password_hash)
+
+
+def serialize_user(user):
+    return {
+        "id": str(user["_id"]),
+        "email": user["email"],
+        "role": user["role"],
+        "name": user.get("name"),
+        "phone": user.get("phone"),
+    }
+
+
 def time_ago(date):
     if isinstance(date, str):
         return date
@@ -74,6 +113,35 @@ def time_ago(date):
     
     years = days // 365
     return f"Il y a {years} an{'s' if years > 1 else ''}"
+
+
+@app.post("/api/auth/signup", status_code=201)
+def signup(data: UserSignup):
+    email = data.email.strip().lower()
+    if db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="Email already exists")
+
+    user_doc = {
+        "email": email,
+        "passwordHash": hash_password(data.password),
+        "role": data.role,
+        "name": data.name,
+        "phone": data.phone,
+        "createdAt": datetime.utcnow(),
+    }
+    result = db.users.insert_one(user_doc)
+    user_doc["_id"] = result.inserted_id
+    return {"user": serialize_user(user_doc)}
+
+
+@app.post("/api/auth/login")
+def login(data: UserLogin):
+    email = data.email.strip().lower()
+    user = db.users.find_one({"email": email})
+    if not user or not verify_password(data.password, user["passwordHash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    return {"user": serialize_user(user)}
 
 
 @app.get("/api/joboffers", response_model=List[JobOffer])
