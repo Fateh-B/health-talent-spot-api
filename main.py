@@ -67,6 +67,7 @@ class UserSignup(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+    role: str
 
 
 def hash_password(password: str):
@@ -140,6 +141,8 @@ def login(data: UserLogin):
     user = db.users.find_one({"email": email})
     if not user or not verify_password(data.password, user["passwordHash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user["role"] != data.role:
+        raise HTTPException(status_code=403, detail="This account does not match the selected role")
 
     return {"user": serialize_user(user)}
 
