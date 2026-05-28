@@ -33,6 +33,7 @@ class JobOffer(BaseModel):
     location: str
     contractType: str
     salary: int
+    salaryPeriod: Optional[str] = None
     experience: str
     genderPreference: str
     description: str
@@ -50,6 +51,7 @@ class JobOfferCreate(BaseModel):
     location: str
     contractType: str
     salary: int
+    salaryPeriod: str
     experienceLevel: str = Field(alias="experienceLevel")
     genderPreference: str
     description: str
