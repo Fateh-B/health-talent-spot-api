@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from bson.errors import InvalidId
+from bson.objectid import ObjectId
 import os
 import hashlib
 import secrets
@@ -72,6 +74,27 @@ class UserLogin(BaseModel):
     role: str
 
 
+class CandidateExperienceInput(BaseModel):
+    title: Optional[str] = None
+    company: Optional[str] = None
+    period: Optional[str] = None
+    description: Optional[str] = None
+
+
+class CandidateProfileUpdate(BaseModel):
+    userId: Optional[str] = None
+    name: Optional[str] = None
+    title: Optional[str] = None
+    role: Optional[str] = None
+    specialty: Optional[str] = None
+    location: Optional[str] = None
+    experience: Optional[str] = None
+    availability: Optional[str] = None
+    about: Optional[str] = None
+    skills: Optional[List[str]] = None
+    professionalExperiences: Optional[List[CandidateExperienceInput]] = None
+
+
 def hash_password(password: str):
     salt = secrets.token_hex(16)
     password_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000).hex()
@@ -91,6 +114,46 @@ def serialize_user(user):
         "role": user["role"],
         "name": user.get("name"),
         "phone": user.get("phone"),
+    }
+
+
+def serialize_candidate(candidate):
+    candidate = dict(candidate)
+    candidate["id"] = str(candidate.pop("_id"))
+    candidate.pop("passwordHash", None)
+
+    account_role = candidate.get("role")
+    if account_role in {"CANDIDATE", "RECRUITER"}:
+        candidate["accountRole"] = account_role
+        candidate.pop("role", None)
+
+    if not candidate.get("name") and candidate.get("email"):
+        candidate["name"] = candidate["email"].split("@")[0]
+
+    if isinstance(candidate.get("createdAt"), datetime):
+        candidate["createdAt"] = candidate["createdAt"].isoformat()
+    if isinstance(candidate.get("updatedAt"), datetime):
+        candidate["updatedAt"] = candidate["updatedAt"].isoformat()
+
+    for key in ("userId", "candidateId"):
+        if isinstance(candidate.get(key), ObjectId):
+            candidate[key] = str(candidate[key])
+
+    return candidate
+
+
+def get_candidate_filter(candidate_id: str):
+    try:
+        object_id = ObjectId(candidate_id)
+    except InvalidId:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    return object_id, {
+        "$or": [
+            {"_id": object_id},
+            {"userId": object_id},
+            {"userId": candidate_id},
+        ]
     }
 
 
@@ -149,6 +212,69 @@ def login(data: UserLogin):
     return {"user": serialize_user(user)}
 
 
+@app.get("/api/candidates")
+def get_candidates():
+    candidates = list(db.candidates.find({}))
+    profile_user_ids = {
+        str(candidate.get("userId"))
+        for candidate in candidates
+        if candidate.get("userId")
+    }
+
+    candidate_users = [
+        user
+        for user in db.users.find({"role": "CANDIDATE"})
+        if str(user["_id"]) not in profile_user_ids
+    ]
+
+    return [serialize_candidate(candidate) for candidate in candidates + candidate_users]
+
+
+@app.get("/api/candidates/{candidate_id}")
+def get_candidate(candidate_id: str):
+    object_id, candidate_filter = get_candidate_filter(candidate_id)
+    candidate = db.candidates.find_one(candidate_filter)
+    if not candidate:
+        candidate = db.users.find_one({"_id": object_id, "role": "CANDIDATE"})
+
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    return serialize_candidate(candidate)
+
+
+@app.put("/api/candidates/{candidate_id}")
+def upsert_candidate(candidate_id: str, profile: CandidateProfileUpdate):
+    object_id, candidate_filter = get_candidate_filter(candidate_id)
+    now = datetime.utcnow()
+    profile_doc = profile.model_dump(exclude_unset=True)
+
+    user_id = profile_doc.get("userId")
+    if user_id:
+        try:
+            profile_doc["userId"] = ObjectId(user_id)
+        except InvalidId:
+            raise HTTPException(status_code=400, detail="Invalid user id")
+    elif db.users.find_one({"_id": object_id, "role": "CANDIDATE"}):
+        profile_doc["userId"] = object_id
+
+    profile_doc["updatedAt"] = now
+
+    existing_candidate = db.candidates.find_one(candidate_filter)
+    if existing_candidate:
+        db.candidates.update_one({"_id": existing_candidate["_id"]}, {"$set": profile_doc})
+        candidate = db.candidates.find_one({"_id": existing_candidate["_id"]})
+    else:
+        profile_doc["createdAt"] = now
+        result = db.candidates.insert_one(profile_doc)
+        candidate = db.candidates.find_one({"_id": result.inserted_id})
+
+    if profile_doc.get("name") and candidate.get("userId"):
+        db.users.update_one({"_id": candidate["userId"]}, {"$set": {"name": profile_doc["name"]}})
+
+    return serialize_candidate(candidate)
+
+
 @app.get("/api/joboffers", response_model=List[JobOffer])
 def get_jobs():
     jobs = list(db.joboffers.find({}))
@@ -179,8 +305,12 @@ def create_job(job_offer: JobOfferCreate):
 
 @app.get("/api/joboffers/{job_id}")
 def get_job(job_id: str):
-    from bson.objectid import ObjectId
-    job = db.joboffers.find_one({"_id": ObjectId(job_id)})
+    try:
+        object_id = ObjectId(job_id)
+    except InvalidId:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = db.joboffers.find_one({"_id": object_id})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job["id"] = str(job.pop("_id"))
