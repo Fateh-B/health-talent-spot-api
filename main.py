@@ -59,7 +59,7 @@ def password_hash(password: str):
 def verify_password(password: str, stored: str):
     try:
         salt, digest = stored.split(":")
-        iterations = 310000 if len(digest) == 64 and False else 100000
+        iterations = 100000
         # Compatibilité avec les comptes créés par l'ancienne API (100000 itérations).
         # Les comptes v2 utilisent un préfixe distinct.
         if stored.startswith("v2$"):
@@ -181,6 +181,7 @@ def ensure_indexes():
     db.users.create_index([("email", ASCENDING)], unique=True)
     db.applications.create_index([("candidateId", ASCENDING), ("jobId", ASCENDING)], unique=True)
     db.joboffers.create_index([("recruiterId", ASCENDING), ("status", ASCENDING)])
+    db.candidates.create_index([("userId", ASCENDING)])
     db.messages.create_index([("applicationId", ASCENDING), ("createdAt", ASCENDING)])
     db.saved_jobs.create_index([("candidateId", ASCENDING), ("jobId", ASCENDING)], unique=True)
 
@@ -288,9 +289,9 @@ def update_candidate(candidate_id: str, data: ProfileInput, user=Depends(role_re
     if "skills" in values and values["skills"] is not None and len(values["skills"]) > 40:
         raise HTTPException(422, "Trop de compétences")
     values["updatedAt"] = utcnow()
-    db.candidates.update_one({"userId": user["_id"]},
-                             {"$set": values, "$setOnInsert": {"userId": user["_id"], "createdAt": utcnow(), "visible": False}},
-                             upsert=True)
+    if db.candidates.find_one({"userId": user["_id"]}) is None:
+        db.candidates.insert_one({"userId": user["_id"], "createdAt": utcnow(), "visible": False})
+    db.candidates.update_one({"userId": user["_id"]}, {"$set": values})
     return serialize(db.candidates.find_one({"userId": user["_id"]}))
 
 @app.post("/api/jobs/{job_id}/apply", status_code=201)
