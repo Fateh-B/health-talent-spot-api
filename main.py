@@ -57,17 +57,18 @@ def password_hash(password: str):
     return salt.hex() + ":" + digest.hex()
 
 def verify_password(password: str, stored: str):
+    """Accepte les mots de passe v2 et les anciens hash PBKDF2 de l'API initiale."""
     try:
-        salt, digest = stored.split(":")
-        iterations = 100000
-        # Compatibilité avec les comptes créés par l'ancienne API (100000 itérations).
-        # Les comptes v2 utilisent un préfixe distinct.
         if stored.startswith("v2$"):
             _, salt, digest = stored.split("$")
-            iterations = 310000
-        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), iterations)
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 310000)
+        else:
+            salt, digest = stored.split(":")
+            # Le code original utilisait les caractères ASCII hexadécimaux
+            # du sel, pas les octets résultant de bytes.fromhex().
+            actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000)
         return hmac.compare_digest(actual, bytes.fromhex(digest))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return False
 
 def v2_hash(password: str):
@@ -289,9 +290,7 @@ def update_candidate(candidate_id: str, data: ProfileInput, user=Depends(role_re
     if "skills" in values and values["skills"] is not None and len(values["skills"]) > 40:
         raise HTTPException(422, "Trop de compétences")
     values["updatedAt"] = utcnow()
-    if db.candidates.find_one({"userId": user["_id"]}) is None:
-        db.candidates.insert_one({"userId": user["_id"], "createdAt": utcnow(), "visible": False})
-    db.candidates.update_one({"userId": user["_id"]}, {"$set": values})
+    db.candidates.update_one({"userId": user["_id"]}, {"$set": values, "$setOnInsert": {"createdAt": utcnow()}}, upsert=True)
     return serialize(db.candidates.find_one({"userId": user["_id"]}))
 
 @app.post("/api/jobs/{job_id}/apply", status_code=201)
