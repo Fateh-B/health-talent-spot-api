@@ -1,0 +1,7 @@
+fastapi==0.162.7
+uvicorn==0.54.0
+pymongo==4.20.0
+python-dotenv==1.2.4
+python-multipart==0.0.33
+pypdf==7.1.0
+pyotp==2.9.0

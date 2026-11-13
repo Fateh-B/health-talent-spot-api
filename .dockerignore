@@ -1,5 +1,8 @@
-build/
-.git/
+.git
 .env
-health-api
-a.out
+.venv
+venv
+__pycache__
+.pytest_cache
+.ruff_cache
+tests

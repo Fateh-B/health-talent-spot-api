@@ -1,0 +1,43 @@
+# Exécuter depuis le dossier API ; les deux dépôts doivent être côte à côte.
+# Reverse proxy HTTPS externe obligatoire. Aucun port MongoDB exposé.
+services:
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?required}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?required}
+      STAGING_DB_PASSWORD: ${STAGING_DB_PASSWORD:?required}
+    volumes:
+      - staging_mongo:/data/db
+      - ./deploy/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    restart: unless-stopped
+  antivirus:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+  api:
+    build: .
+    environment:
+      APP_ENV: staging
+      MONGODB_URI: ${STAGING_MONGODB_URI:?URI avec compte applicatif dédié required}
+      MONGODB_DB: officine_staging
+      SESSION_SECRET: ${SESSION_SECRET:?required}
+      FRONTEND_ORIGINS: ${STAGING_ORIGIN:?https required}
+      PUBLIC_FRONTEND_URL: ${STAGING_ORIGIN:?https required}
+      COOKIE_SECURE: 'true'
+      COOKIE_SAMESITE: lax
+      MAIL_MODE: smtp
+      SMTP_HOST: ${SMTP_HOST:?required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:?required}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      CLAMAV_HOST: antivirus
+    depends_on: [mongo, antivirus]
+    restart: unless-stopped
+  web:
+    build: ../health-talent-spot
+    ports: ['127.0.0.1:8090:8080']
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  staging_mongo:

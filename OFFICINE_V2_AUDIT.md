@@ -1,3 +1,10 @@
+# Actualisation — 13 novembre 2026
+
+Les problèmes de session, droits, profils et parcours décrits dans l'audit initial
+ci-dessous ont fait l'objet de corrections. Voir `VALIDATION.md` pour les tests exécutés
+et `DEPLOYMENT.md` pour les limites restantes avant ouverture publique.
+Les notes suivantes sont conservées comme historique de l'audit initial.
+
 # Officine V2 — sécurité et base de données
 
 Branche de travail isolée créée à partir de `main`; **aucune migration, suppression ou opération sur la base MongoDB réelle**.
